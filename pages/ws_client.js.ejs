@@ -103,6 +103,122 @@ document.addEventListener('DOMContentLoaded', function () {
     // Add click event listener to the "Send Message" button
     document.getElementById('send').addEventListener('click', sendMessage);
 
+    // Create new chat call to backend
+    function createNewChat() {
+        // Get the user input
+        const userInput = document.getElementById('userInputNewChat').value;
+
+        // Do something with the user input
+        console.log('Calling new chat creation: ' + userInput);
+
+        const url = '/tools';
+        const data = { command: 'createChat', title: userInput };
+
+        fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            // Add any other headers as needed
+        },
+        body: JSON.stringify(data),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Handle the response data
+            console.log(JSON.stringify(data));
+
+            // Add new item to list of chats
+            const chatList = document.getElementById('chatList');
+            let text = `<li class="list-group-item">
+            <a href="?chatId=` + data.Id + `" class="user-link">`
+              + data.Title +
+              `<span class="badge bg-primary float-end">?</span>
+            </a>
+          </li>`;
+          chatList.innerHTML += text;
+          const chatListDrop = document.getElementById('chatListDropdown');
+          let textDrop = `<li><a class="dropdown-item" href="?chatId=` + data.Id + `">` + data.Title + `</a></li>`;
+          chatListDrop.innerHTML += textDrop;
+        })
+        .catch(error => {
+            // Handle errors
+            console.error('Error:', error);
+        });
+
+        // Close the modal
+        $('#inputDialogNewChat').modal('hide');
+    }
+
+    function callModalCreateNewChat() {
+        // Clear the input field on every open
+        document.getElementById('userInputNewChat').value = '';
+        
+        // Show the modal
+        $('#inputDialogNewChat').modal('show');
+    }
+
+    // Add click event listener to the "Add new chat" button
+    document.getElementById('createNewChat').addEventListener('click', createNewChat);
+    document.getElementById('callModalCreateNewChat').addEventListener('click', callModalCreateNewChat);
+
+    // Add user to current chat call to backend
+    function addUserToChat() {
+        // Get the user input
+        const userInput = document.getElementById('userInputAddUserToChat').value;
+
+        // Do something with the user input
+        console.log('Calling add user to chat: ' + userInput + ', ' + currentChatId);
+
+        const url = '/tools';
+        const data = { command: 'addUser', username: userInput, chatId: currentChatId };
+
+        fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            // Add any other headers as needed
+        },
+        body: JSON.stringify(data),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Handle the response data
+            console.log(JSON.stringify(data));
+
+            // Add new item to list of chats
+            const chatList = document.getElementById('chatList');
+            let text = `<li class="list-group-item">
+            <a href="?chatId=` + data.Id + `" class="user-link">`
+              + data.Title +
+              `<span class="badge bg-primary float-end">?</span>
+            </a>
+          </li>`;
+          chatList.innerHTML += text;
+          const chatListDrop = document.getElementById('chatListDropdown');
+          let textDrop = `<li><a class="dropdown-item" href="?chatId=` + data.Id + `">` + data.Title + `</a></li>`;
+          chatListDrop.innerHTML += textDrop;
+        })
+        .catch(error => {
+            // Handle errors
+            console.error('Error:', error);
+        });
+
+        // Close the modal
+        $('#inputDialogAddUserToChat').modal('hide');
+    }
+
+    function callModalAddUserToChat() {
+        // Clear the input field on every open
+        document.getElementById('userInputAddUserToChat').value = '';
+        
+        // Show the modal
+        $('#inputDialogAddUserToChat').modal('show');
+    }
+
+    // Add click event listener to the "Add new chat" button
+    document.getElementById('addUserToChat').addEventListener('click', addUserToChat);
+    document.getElementById('callModalAddUserToChat').addEventListener('click', callModalAddUserToChat);
+
     // Open initial WebSocket connection
     openSocket();
 

@@ -14,6 +14,7 @@ const Mysql = require('mysql2/promise');
 const MysqlSync = require('sync-mysql');
 const Path = require('path');
 const Bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid');
 const packageJson = require('./package.json');
 
 const appInfo = {version: packageJson.version};
@@ -83,18 +84,6 @@ const mysqlSyncConnInfo = {
 logger.info('Connecting to the database');
 const connSync = new MysqlSync(mysqlSyncConnInfo);
 
-// Create a async MySQL pool
-// const pool = Mysql.createPool({
-//     host: '192.168.0.4',
-//     port: 3307,
-//     user: 'svarochat',
-//     password: 'NA4aNOfiBocE.',
-//     database: 'svarochat',
-//     waitForConnections: true,
-//     connectionLimit: 10,
-//     queueLimit: 0
-// });
-
 // Setup server
 const app = Express();
 // Set EJS as the view engine
@@ -103,6 +92,7 @@ app.set('views', __dirname + '/pages');
 const server = Http.createServer(app);
 const wss = new WebSocket.Server({server});
 
+app.use(BodyParser.json()); // Parse JSON bodies
 app.use(BodyParser.urlencoded({extended: true})); // Parse URL-encoded bodies
 
 // Use express-session middleware to manage user sessions
@@ -193,11 +183,22 @@ try {
 }
 });
 
+// Generate unique IDs based on current timestamp, random value and other factors
+function generateUniqueId() {
+    const uniqueId = uuidv4();
+    return uniqueId;
+}
+
 function createNewUser(username, password) {
+    logger.info('Creating new user: ' + username);
+
     const hashedPassword = Bcrypt.hash(password, 8); // 8 salt rounds
 
+    // Generate first auth token for initialising websocket connections
+    const socketAuthToken = generateUniqueId();
+
     // Store the hashedPassword in the database
-    connSync.query('INSERT INTO Users (Username, Password) VALUES (?, ?)', [username, hashedPassword]);
+    connSync.query('INSERT INTO Users (Username, Password, AuthToken, AuthTokenCreated) VALUES (?, ?, ?, CURRENT_TIMESTAMP())', [username, hashedPassword, socketAuthToken]);
 }
   
 // Fetch users from the database and compare passwords during authentication
@@ -250,7 +251,6 @@ function getUserChats(username) {
         logger.debug('GetUserChats: ' + username);
         // Fetch user's chats from the database based on the username
         const chats = connSync.query('SELECT DISTINCT Chats.* FROM Chats, UsersToChats WHERE UsersToChats.Username = ? AND UsersToChats.ChatId = Chats.Id', [username]);
-        console.log(chats);
         
         if (chats.length > 0) {
             return chats;
@@ -289,7 +289,7 @@ function getChatInfo(chatId) {
         logger.debug('GetChatInfo: ' + chatId);
         // Fetch user's chats from the database based on the username
         const chatInfo = connSync.query('SELECT * FROM Chats WHERE Id = ?', [chatId]);
-        const userList = connSync.query('SELECT * FROM UsersToChats WHERE ChatId = ?', [chatId]);
+        const userList = connSync.query('SELECT DISTINCT UsersToChats.*, Users.Firstname, Users.Lastname FROM UsersToChats, Users WHERE ChatId = ? AND UsersToChats.Username = Users.Username', [chatId]);
         
         if (chatInfo.length > 0 && userList.length > 0) {
             const info = {Info: chatInfo[0], Members: userList};
@@ -330,16 +330,37 @@ function createNewChat(ownerUsername, chatTitle) {
         logger.debug('CreateNewChat (' + ownerUsername + '): ' + chatTitle);
         // Insert new chat into chats table
         const result = connSync.query('INSERT INTO Chats (Title) VALUES (?)', [chatTitle]);
-        console.log(result);
         
-        // Link created chat to its owner user
-        //const result1 = connSync.query('INSERT INTO UsersToChats (Username, ChatId) VALUES (?, ?)', [ownerUsername, 1]);
-        //console.log(result1);
-        
-        if (chats.length > 0) {
-            return chats;
+        if (result.affectedRows > 0) {
+            // Link created chat to its owner user
+            const result1 = connSync.query('INSERT INTO UsersToChats (Username, ChatId, IsAdmin) VALUES (?, ?, True)', [ownerUsername, result.insertId]);
+            
+            if (result1.affectedRows > 0) {
+                return [result, result1];
+            }
+
+            return false;
         }
     
+        return false; // Insertion failed
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+
+// Add specified user to chat
+function addUserToChat(username, chatId) {
+    try {
+        logger.debug('AddUserToChat (' + username + '): ' + chatId);
+
+        // Link created chat to its owner user
+        const result = connSync.query('INSERT INTO UsersToChats (Username, ChatId) VALUES (?, ?)', [username, chatId]);
+        
+        if (result.affectedRows > 0) {
+            return result;
+        }
+
         return false; // Insertion failed
     } catch (error) {
         // Handle database errors
@@ -398,26 +419,62 @@ app.get('/', (req, res) => {
 });
 
 // Create or edit commands route
-app.get('/tools', (req, res) => {
+app.post('/tools', (req, res) => {
     if (req.isAuthenticated()) {
-        logger.info('HTTP [User: ' + req.user.Username + '] GET /tools');
+        logger.info('HTTP [User: ' + req.user.Username + '] POST /tools');
 
-        // Get the command from GET parameter
-        const command = req.query.command;
+        const responseData = {};
+
+        // Get the command from POST parameter
+        const command = req.body["command"];
         if (command) {
+            if (command == 'createChat') {
+                // Get the new chat title from POST parameter
+                const chatTitle = req.body["title"];
+                if (chatTitle) {
+                    // Insert new chat into database
+                    const result = createNewChat(req.user.Username, chatTitle);
 
-        }
+                    //TODO: add current user as owner of new chat
+                    
+                    if (result.affectedRows > 0) {
+                        responseData.Status = 'success';
+                        // The Id of newly inserted chat
+                        responseData.Id = result.insertId;
+                        responseData.Title = chatTitle;
+                    } else {
+                        responseData.Error = 'Failed to insert chat';
+                    }
+                } else {
+                    responseData.Error = 'No title';
+                }
+            } else if (command == 'addUser') {
+                // Get the new chat title from GET parameter
+                const chatId = req.body["chatId"];
+                const username = req.body["username"];
+                if (chatId && username) {
+                    // Insert new chat into database
+                    const result = addUserToChat(username, chatId);
 
-        if (command == 'createChat') {
-            // Get the new chat title from GET parameter
-            const chatTitle = req.query.title;
-            if (chatTitle) {
-
+                    //TODO: add current user as owner of new chat
+                    
+                    if (result.affectedRows > 0) {
+                        responseData.Status = 'success';
+                    } else {
+                        responseData.Error = 'Failed to insert user to chat';
+                    }
+                } else {
+                    responseData.Error = 'No username and/or chat id';
+                }
             }
+        } else {
+            responseData.Error = 'Invalid command';
         }
 
-
-
+        // Set the Content-Type header and send JSON response
+        res.header('Content-Type', 'application/json');
+        // Send status response to client
+        res.json(responseData);
     } else {
         // If is not logged in, redirect to main page
         res.redirect('/');
@@ -535,7 +592,7 @@ wss.on('connection', (ws, req) => {
     } else {
         // Non-authenticated user, close the connection or handle as needed
         logger.warn('WS User not authenticated');
-        ws.send('Invalid authentication');
+        ws.send('{"error": "Invalid authentication"}');
         ws.close();
     }
 });
@@ -543,8 +600,6 @@ wss.on('connection', (ws, req) => {
 // Send Websocket message to all connections of users in specified chat
 function sendWebsocketMessageToUsersInChat(chatId, message) {
     logger.debug('SendWebsocketMessageToUsersInChat - chatId: ' + chatId);
-
-    console.log(message);
 
     // Save message to the database
     const result = connSync.query('INSERT INTO Messages (Username, ChatId, Data, Sent) VALUES (?, ?, ?, FROM_UNIXTIME(?))', [message.Username, chatId, JSON.stringify({text: message.text}), message.Send / 1000]);

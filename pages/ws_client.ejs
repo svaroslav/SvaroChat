@@ -1,0 +1,49 @@
+const connection = new WebSocket("wss://chat.svaro.cz?auth-token=<%= user_auth_token %>");
+const button = document.querySelector("#send");
+
+// Send a ping message every 30 seconds
+const pingInterval = setInterval(() => {
+    if (connection.readyState === WebSocket.OPEN) {
+        connection.send('ping');
+    }
+}, 30000);
+
+connection.onopen = (event) => {
+    console.log("WebSocket is open now.");
+};
+
+connection.onclose = (event) => {
+    console.log("WebSocket is closed now.");
+    clearInterval(pingInterval); // Clear the ping interval when the connection is closed
+};
+
+connection.onerror = (event) => {
+    console.error("WebSocket error observed:", event);
+};
+
+connection.onmessage = (event) => {
+    // Handle received messages, including pong messages
+    const chat = document.querySelector("#chat");
+    if (event.data === 'pong') {
+        //console.log('Received pong message from the server.');
+    } else {
+        chat.innerHTML += event.data;
+    }
+};
+
+button.addEventListener("click", () => {
+    const message = document.querySelector("#message");
+    const data = `${message.value}`;
+
+    // Send composed message to the server
+    connection.send(data);
+
+    // clear input fields
+    message.value = "";
+});
+
+// Close the connection and clear the ping interval when the page is unloaded
+window.addEventListener('beforeunload', () => {
+    connection.close();
+    clearInterval(pingInterval);
+});

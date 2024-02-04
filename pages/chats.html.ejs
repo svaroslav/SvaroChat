@@ -48,7 +48,7 @@
       }
 
       #chat {
-        max-height: calc(100vh - 300px); /* Adjust the value based on your navbar and button height */
+        max-height: calc(100vh - 350px); /* Adjust the value based on your navbar and button height */
         overflow-y: auto;
       }
     </style>
@@ -71,7 +71,6 @@
         <% if (loggedIn) { %>
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-            <span class="badge bg-secondary"><span id="wsstatus" class="material-icons">cloud_off</span></span>
             <%= user.Username %>
           </a>
           <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
@@ -98,7 +97,20 @@
         <!-- Left column for the list -->
         <div class="col-md-3">
           <h4>My chats</h4>
-          <ul class="list-group" id="userList">
+          <!-- Use a dropdown for small screens -->
+          <div class="dropdown d-md-none">
+            <button class="btn btn-secondary dropdown-toggle w-100" type="button" id="userListDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              Select a chat
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="userListDropdown">
+              <% for (const chat of chats) { %>
+              <li><a class="dropdown-item" href="?chatId=<%= chat.Id %>"><%= chat.Title %></a></li>
+              <% } %>
+              <!-- Add more users as needed -->
+            </ul>
+          </div>
+          <!-- Use a list for larger screens -->
+          <ul class="list-group d-none d-md-block" id="userList">
             <% for (const chat of chats) { %>
             <li class="list-group-item">
               <a href="?chatId=<%= chat.Id %>" class="user-link">
@@ -116,8 +128,8 @@
           <% if (currentChat) { %>
 <h4>Chat: <strong><%= currentChat.Info.Title %></strong></h4>
           <p><%= currentChat.Users %></p>
-            <% if (messages) { %>
           <div id="chat" class="mt-5" data-chat-id="<%= currentChat.Info.Id %>">
+            <% if (messages) { %>
             <% for (const message of messages) { 
               // Current user's own message
                 if (message.Username == user.Username) { %>
@@ -131,10 +143,10 @@
                       <span class="badge bg-secondary, text-dark"><%= new Date(message.Sent).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'}); %></span>
                   </div>
             <% } %>
-            </div>
               <% } else { %>
                   <p>No messages yet.</p>
                  <% } %>
+            </div>
 
           <!-- Message input and send button -->
           <div class="input-group mt-3">
@@ -162,6 +174,12 @@
         </div>
         <% } %>
   </div>
+
+<footer class="footer mt-auto py-3 bg-light fixed-bottom">
+  <div class="container">
+    <span class="text-muted">&copy; Jan Svárovský 2023-2024 | Version: <%= appInfo.version %><% if (loggedIn) { %> | <span class="badge bg-secondary"><span id="wsstatus" class="material-icons">cloud_off</span></span><% } %></span>
+  </div>
+</footer>
 
   <!-- Bootstrap JS and custom scripts -->
   <script src="/static/jquery/3.7.1/jquery.min.js"></script>

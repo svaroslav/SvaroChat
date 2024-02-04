@@ -13,6 +13,9 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 const Mysql = require('mysql2/promise');
 const MysqlSync = require('sync-mysql');
 const Path = require('path');
+const packageJson = require('./package.json');
+
+const appInfo = {version: packageJson.version};
 
 // Define a custom format for the log entries
 const customFormat = Winston.format.printf(({ level, message, timestamp }) => {
@@ -65,7 +68,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Starting app
-logger.info('Starting server');
+logger.info('Starting server - version: ' + appInfo.version);
 
 // DB connection info for synchronous queries
 const mysqlSyncConnInfo = {
@@ -238,7 +241,8 @@ function getUserChats(username) {
     try {
         logger.debug('GetUserChats: ' + username);
         // Fetch user's chats from the database based on the username
-        const chats = connSync.query('SELECT Chats.* FROM Chats, UsersToChats WHERE UsersToChats.Username = ?', [username]);
+        const chats = connSync.query('SELECT DISTINCT Chats.* FROM Chats, UsersToChats WHERE UsersToChats.Username = ? AND UsersToChats.ChatId = Chats.Id', [username]);
+        console.log(chats);
         
         if (chats.length > 0) {
             return chats;
@@ -256,7 +260,8 @@ function getChatMessages(chatId, timestampFrom = 0, timestampTo = new Date().get
     try {
         logger.debug('GetChatMessages: ' + chatId + ' <' + timestampFrom / 1000 + ', ' + timestampTo / 1000 + '>');
         // Fetch user's chats from the database based on the username
-        const messages = connSync.query('SELECT * FROM Messages WHERE ChatId = ? AND Sent BETWEEN FROM_UNIXTIME(?) AND FROM_UNIXTIME(?) ORDER BY Sent', [chatId, timestampFrom / 1000, timestampTo / 1000]);
+        // Get newest 256 rows, but keep original order
+        const messages = connSync.query('SELECT * FROM (SELECT * FROM Messages WHERE ChatId = ? AND Sent BETWEEN FROM_UNIXTIME(?) AND FROM_UNIXTIME(?) ORDER BY Sent DESC LIMIT 256) AS subquery ORDER BY Sent ASC', [chatId, timestampFrom / 1000, timestampTo / 1000]);
         logger.debug('Found ' + messages.length + ' messages');
         
         if (messages.length > 0) {
@@ -350,27 +355,37 @@ app.get('/', (req, res) => {
     if (req.isAuthenticated()) {
         logger.info('HTTP [User: ' + req.user.Username + '] GET /');
 
-        // Get the id of chat from GET parameter
-        const chatId = req.query.chatId;
-        var chatMessages = null;
-        var currentChat = null;
-        if (chatId) {
-            req.user.chatId = chatId;
-
-            // Get messages inside that chat
-            chatMessages = getChatMessages(chatId);
-
-            // Get information about current chat room
-            currentChat = getChatInfo(chatId);
-        }
-
         // Get list of chats of current user
         const userChats = getUserChats(req.user.Username);
 
-        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user, chats: userChats, messages: chatMessages, currentChat: currentChat});
+        // Initialize objects to pass to frontend render
+        var chatMessages = null;
+        var currentChat = null;
+
+        // Get the id of chat from GET parameter
+        const chatId = req.query.chatId;
+        
+        if (chatId) {
+            // Check if user is allowed to access this chat
+            // Check if the array contains an object with the specified Id
+            var containsId = userChats.some(function(row) {
+                return row.Id == chatId;
+            });
+            if (containsId) {
+                // Get messages inside that chat
+                chatMessages = getChatMessages(chatId);
+
+                // Get information about current chat room
+                currentChat = getChatInfo(chatId);
+            } else {
+                logger.info('User ' + req.user.Username + ' tried to access chat ' + chatId + ' in which is not a member');
+            }
+        }
+
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user, chats: userChats, messages: chatMessages, currentChat: currentChat, appInfo: appInfo});
     } else {
         logger.info('HTTP GET /');
-        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: false, user: null, chats: null, messages: null});
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: false, user: null, chats: null, messages: null, appInfo: appInfo});
     }
 });
 
@@ -405,7 +420,7 @@ app.get('/profile', (req, res) => {
     if (req.isAuthenticated()) {
         // Is logged in, render login page
         logger.info('HTTP GET /profile');
-        res.render(__dirname + '/pages/profile.html.ejs', { user: req.user });
+        res.render(__dirname + '/pages/profile.html.ejs', { user: req.user, appInfo: appInfo });
     } else {
         // If is not logged in, redirect to main page
         res.redirect('/');
@@ -426,7 +441,7 @@ app.get('/login', (req, res) => {
     } else {
         // Not logged in, render login page
         logger.info('HTTP GET /login');
-        res.render(__dirname + '/pages/login.html.ejs', {  });
+        res.render(__dirname + '/pages/login.html.ejs', { appInfo: appInfo });
     }
 });
 

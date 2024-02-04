@@ -4,14 +4,21 @@ document.addEventListener('DOMContentLoaded', function () {
     const maxReconnectAttempts = 10;
     const currentChatId = document.getElementById('chat').dataset.chatId;
     const user = <%- JSON.stringify(user) %>;
+    const wsStatus = document.getElementById('wsstatus');
 
     // Function to open a new WebSocket connection
     function openSocket() {
         socket = new WebSocket('wss://chat.svaro.cz?auth-token=<%= user_auth_token %>');
 
+        // Update connection status icon
+        wsStatus.innerText = 'cloud_done';
+
         // Handle close event
         socket.addEventListener('close', function (event) {
             console.log('WebSocket connection closed:', event);
+
+            // Update connection status icon
+            wsStatus.innerText = 'cloud_sync';
 
             // Try to reconnect up to maxReconnectAttempts times
             if (reconnectAttempts < maxReconnectAttempts) {
@@ -21,6 +28,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 }, 5000);
             } else {
                 console.log('Max reconnect attempts reached.');
+
+                // Update connection status icon
+                wsStatus.innerText = 'cloud_off';
             }
         });
 
@@ -36,24 +46,29 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 const messageJson = JSON.parse(event.data);
                 if (messageJson) {
-                    console.log('Received message:', event.data);
+                    // Check if received message belongs to current chat or another one
+                    if (messageJson.chatId == currentChatId) {
+                        console.log('Received message from ' + messageJson.Username + ':', messageJson.text);
+                        // Add message to chat history div
+                        const chat = document.getElementById('chat');
+                        let text = ``;
+                        if (messageJson.Username == user.Username) {
+                            text += `<div class="message-right">`;
+                        } else {
+                            text += `<div class="message">`;
+                        }
+                        text += `<span class="user">` + messageJson.Username + `</span><br>
+                                <div class="message-text ` + (messageJson.Username == user.Username ? 'bg-primary' : 'bg-light') + `">` + messageJson.text + `<br></div>
+                                <span class="badge bg-secondary, text-dark">` + (new Date(messageJson.Send).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'})) + `</span>
+                                </div>`;
+                        chat.innerHTML += text;
 
-                    // Add message to chat history div
-                    const chat = document.getElementById('chat');
-                    let text = ``;
-                    if (messageJson.Username == user.Username) {
-                        text += `<div class="message-right">`;
+                        // Adjust scroll position
+                        chat.scrollTop = chat.scrollHeight;
                     } else {
-                        text += `<div class="message">`;
+                        console.log('New message from ' + messageJson.Username + ' in chat ' + messageJson.chatId);
+                        // TODO: Update chat list unread counter
                     }
-                    text += `<span class="user">` + messageJson.Username + `</span><br>
-                            <div class="message-text ` + (messageJson.Username == user.Username ? 'bg-primary' : 'bg-light') + `">` + messageJson.text + `<br></div>
-                            <span class="badge bg-secondary, text-dark">` + (new Date(messageJson.Send).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'})) + `</span>
-                            </div>`;
-                    chat.innerHTML += text;
-
-                    // Adjust scroll position
-                    chat.scrollTop = chat.scrollHeight;
                 } else {
                     console.error('Received message with invalid format');
                 }
@@ -90,6 +105,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Open initial WebSocket connection
     openSocket();
+
+    // Adjust scroll position on page load
+    chat.scrollTop = chat.scrollHeight;
 
     // Periodically send a plain text "ping" every 30 seconds
     setInterval(function () {

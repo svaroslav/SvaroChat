@@ -7,6 +7,8 @@
   <title>SvaroChat</title>
   <!-- Link to Bootstrap CSS -->
   <link rel="stylesheet" href="/static/bootstrap/5.0.2/css/bootstrap.min.css">
+  <!-- Link to Material Design Icons CSS -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
   <!-- Add your custom styles here -->
   <% if (loggedIn) { %>
     <style>
@@ -15,12 +17,15 @@
       .message-right {
         max-width: 70%;
         /* Adjust the percentage as needed */
+        margin-bottom: 10px;
+        /* Optional: Add margin between messages */
+      }
+
+      .message-text {
         padding: 10px;
         /* Add padding for spacing */
         border-radius: 10px;
         /* Optional: Add rounded corners */
-        margin-bottom: 10px;
-        /* Optional: Add margin between messages */
       }
 
       .message .user,
@@ -40,6 +45,11 @@
         text-align: right;
         margin-left: auto;
         /* Align to the right */
+      }
+
+      #chat {
+        max-height: calc(100vh - 300px); /* Adjust the value based on your navbar and button height */
+        overflow-y: auto;
       }
     </style>
     <% } %>
@@ -61,6 +71,7 @@
         <% if (loggedIn) { %>
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="badge bg-secondary"><span id="wsstatus" class="material-icons">cloud_off</span></span>
             <%= user.Username %>
           </a>
           <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
@@ -88,11 +99,11 @@
         <div class="col-md-3">
           <h4>My chats</h4>
           <ul class="list-group" id="userList">
-            <% for (const chat of user.chats) { %>
+            <% for (const chat of chats) { %>
             <li class="list-group-item">
               <a href="?chatId=<%= chat.Id %>" class="user-link">
                 <%= chat.Title %>
-                <span class="badge bg-primary float-end">3</span>
+                <span class="badge bg-primary float-end">?</span>
               </a>
             </li>
               <% } %>
@@ -102,19 +113,28 @@
 
         <!-- Right column for the chat -->
         <div class="col-md-9">
-          <h4>Chat</h4>
-          <div id="chat" class="mt-5">
-            <!-- Example dummy messages -->
-            <div class="message bg-light">
-              <span class="user">User 1:</span><br>
-              Hi there!
+          <% if (currentChat) { %>
+<h4>Chat: <strong><%= currentChat.Info.Title %></strong></h4>
+          <p><%= currentChat.Users %></p>
+            <% if (messages) { %>
+          <div id="chat" class="mt-5" data-chat-id="<%= currentChat.Info.Id %>">
+            <% for (const message of messages) { 
+              // Current user's own message
+                if (message.Username == user.Username) { %>
+              <div class="message-right">
+                <% } else { %>
+                  <div class="message">
+                <% }
+                const data = JSON.parse(message.Data); %>
+                      <span class="user"><%= message.Username %></span><br>
+                      <div class="message-text <%= message.Username == user.Username ? 'bg-primary' : 'bg-light' %>"><%= data.text %><br></div>
+                      <span class="badge bg-secondary, text-dark"><%= new Date(message.Sent).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'}); %></span>
+                  </div>
+            <% } %>
             </div>
-            <div class="message-right bg-primary">
-              <span class="user">User 2:</span><br>
-              Hello! How are you?
-            </div>
-            <!-- Add more messages as needed -->
-          </div>
+              <% } else { %>
+                  <p>No messages yet.</p>
+                 <% } %>
 
           <!-- Message input and send button -->
           <div class="input-group mt-3">
@@ -124,6 +144,17 @@
             </div>
           </div>
         </div>
+         <% } else { %>
+<h4>No chat selected</h4>
+          <div id="chat" class="mt-5" style="display: hidden;">
+          <div class="input-group mt-3" style="display: hidden;">
+            <input id="message" type="text" class="form-control" placeholder="Message">
+            <div class="input-group-append">
+              <button id="send" class="btn btn-primary">Send</button>
+            </div>
+          </div>
+        </div>
+         <% } %>
       </div>
       <% } else { %>
         <div>

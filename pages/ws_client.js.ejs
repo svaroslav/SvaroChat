@@ -1,49 +1,100 @@
-const connection = new WebSocket("wss://chat.svaro.cz?auth-token=<%= user_auth_token %>");
-const button = document.querySelector("#send");
+document.addEventListener('DOMContentLoaded', function () {
+    let socket;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const currentChatId = document.getElementById('chat').dataset.chatId;
+    const user = <%- JSON.stringify(user) %>;
 
-// Send a ping message every 30 seconds
-const pingInterval = setInterval(() => {
-    if (connection.readyState === WebSocket.OPEN) {
-        connection.send('ping');
+    // Function to open a new WebSocket connection
+    function openSocket() {
+        socket = new WebSocket('wss://chat.svaro.cz?auth-token=<%= user_auth_token %>');
+
+        // Handle close event
+        socket.addEventListener('close', function (event) {
+            console.log('WebSocket connection closed:', event);
+
+            // Try to reconnect up to maxReconnectAttempts times
+            if (reconnectAttempts < maxReconnectAttempts) {
+                setTimeout(function () {
+                    reconnectAttempts++;
+                    openSocket(); // Reconnect
+                }, 5000);
+            } else {
+                console.log('Max reconnect attempts reached.');
+            }
+        });
+
+        // Handle error event
+        socket.addEventListener('error', function (event) {
+            console.error('WebSocket error:', event);
+        });
+
+        // Handle message event
+        socket.addEventListener('message', function (event) {
+            if (event.data == 'pong') {
+                // Connection keep-alive ping message
+            } else {
+                const messageJson = JSON.parse(event.data);
+                if (messageJson) {
+                    console.log('Received message:', event.data);
+
+                    // Add message to chat history div
+                    const chat = document.getElementById('chat');
+                    let text = ``;
+                    if (messageJson.Username == user.Username) {
+                        text += `<div class="message-right">`;
+                    } else {
+                        text += `<div class="message">`;
+                    }
+                    text += `<span class="user">` + messageJson.Username + `</span><br>
+                            <div class="message-text ` + (messageJson.Username == user.Username ? 'bg-primary' : 'bg-light') + `">` + messageJson.text + `<br></div>
+                            <span class="badge bg-secondary, text-dark">` + (new Date(messageJson.Send).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'})) + `</span>
+                            </div>`;
+                    chat.innerHTML += text;
+
+                    // Adjust scroll position
+                    chat.scrollTop = chat.scrollHeight;
+                } else {
+                    console.error('Received message with invalid format');
+                }
+            }
+        });
     }
-}, 30000);
 
-connection.onopen = (event) => {
-    console.log("WebSocket is open now.");
-};
+    // Function to send a JSON-formatted message to the WebSocket
+    function sendMessage() {
+        const messageInput = document.getElementById('message');
+        const messageValue = messageInput.value;
 
-connection.onclose = (event) => {
-    console.log("WebSocket is closed now.");
-    clearInterval(pingInterval); // Clear the ping interval when the connection is closed
-};
-
-connection.onerror = (event) => {
-    console.error("WebSocket error observed:", event);
-};
-
-connection.onmessage = (event) => {
-    // Handle received messages, including pong messages
-    const chat = document.querySelector("#chat");
-    if (event.data === 'pong') {
-        //console.log('Received pong message from the server.');
-    } else {
-        chat.innerHTML += event.data;
+        // Send only if the message is not empty
+        if (messageValue.trim() !== '') {
+            const jsonMessage = JSON.stringify({ text: messageValue, chatId: currentChatId });
+            
+            // Check if the WebSocket is open before sending
+            if (socket.readyState === WebSocket.OPEN) {
+                // Attempt to send the message
+                try {
+                    socket.send(jsonMessage);
+                    messageInput.value = ''; // Clear the input field
+                } catch (error) {
+                    console.error('Error while sending message:', error);
+                }
+            } else {
+                console.error('WebSocket is not open. Cannot send message.');
+            }
+        }
     }
-};
 
-button.addEventListener("click", () => {
-    const message = document.querySelector("#message");
-    const data = `${message.value}`;
+    // Add click event listener to the "Send Message" button
+    document.getElementById('send').addEventListener('click', sendMessage);
 
-    // Send composed message to the server
-    connection.send(data);
+    // Open initial WebSocket connection
+    openSocket();
 
-    // clear input fields
-    message.value = "";
-});
-
-// Close the connection and clear the ping interval when the page is unloaded
-window.addEventListener('beforeunload', () => {
-    connection.close();
-    clearInterval(pingInterval);
+    // Periodically send a plain text "ping" every 30 seconds
+    setInterval(function () {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send('ping');
+        }
+    }, 30000);
 });

@@ -250,6 +250,45 @@ function getUserChats(username) {
         throw error;
     }
 }
+
+// Fetch user's chats from the database
+function getChatMessages(chatId, timestampFrom = 0, timestampTo = new Date().getTime()) {
+    try {
+        logger.debug('GetChatMessages: ' + chatId + ' <' + timestampFrom / 1000 + ', ' + timestampTo / 1000 + '>');
+        // Fetch user's chats from the database based on the username
+        const messages = connSync.query('SELECT * FROM Messages WHERE ChatId = ? AND Sent BETWEEN FROM_UNIXTIME(?) AND FROM_UNIXTIME(?) ORDER BY Sent', [chatId, timestampFrom / 1000, timestampTo / 1000]);
+        logger.debug('Found ' + messages.length + ' messages');
+        
+        if (messages.length > 0) {
+            return messages;
+        }
+    
+        return null; // User not found
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+
+// Fetch info about selected chat room from the database
+function getChatInfo(chatId) {
+    try {
+        logger.debug('GetChatInfo: ' + chatId);
+        // Fetch user's chats from the database based on the username
+        const chatInfo = connSync.query('SELECT * FROM Chats WHERE Id = ?', [chatId]);
+        const userList = connSync.query('SELECT * FROM UsersToChats WHERE ChatId = ?', [chatId]);
+        
+        if (chatInfo.length > 0 && userList.length > 0) {
+            const info = {Info: chatInfo[0], Members: userList};
+            return info;
+        }
+    
+        return null; // User not found
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
   
 // Fetch user data from the database
 function getUserByAuthToken(authToken) {
@@ -271,6 +310,29 @@ function getUserByAuthToken(authToken) {
         throw error;
     }
 }
+  
+// Fetch user's chats from the database
+function createNewChat(ownerUsername, chatTitle) {
+    try {
+        logger.debug('CreateNewChat (' + ownerUsername + '): ' + chatTitle);
+        // Insert new chat into chats table
+        const result = connSync.query('INSERT INTO Chats (Title) VALUES (?)', [chatTitle]);
+        console.log(result);
+        
+        // Link created chat to its owner user
+        //const result1 = connSync.query('INSERT INTO UsersToChats (Username, ChatId) VALUES (?, ?)', [ownerUsername, 1]);
+        //console.log(result1);
+        
+        if (chats.length > 0) {
+            return chats;
+        }
+    
+        return false; // Insertion failed
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
 
 // Serve static files from the 'static' folder
 app.use('/static', Express.static(Path.join(__dirname, 'static'), {
@@ -283,25 +345,59 @@ app.use('/static', Express.static(Path.join(__dirname, 'static'), {
     },
 }));
 
-// Define routes
+// Main page route
 app.get('/', (req, res) => {
     if (req.isAuthenticated()) {
         logger.info('HTTP [User: ' + req.user.Username + '] GET /');
 
         // Get the id of chat from GET parameter
         const chatId = req.query.chatId;
+        var chatMessages = null;
+        var currentChat = null;
         if (chatId) {
             req.user.chatId = chatId;
+
+            // Get messages inside that chat
+            chatMessages = getChatMessages(chatId);
+
+            // Get information about current chat room
+            currentChat = getChatInfo(chatId);
         }
 
         // Get list of chats of current user
         const userChats = getUserChats(req.user.Username);
-        req.user.chats = userChats;
 
-        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user});
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user, chats: userChats, messages: chatMessages, currentChat: currentChat});
     } else {
         logger.info('HTTP GET /');
-        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: false, user: null});
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: false, user: null, chats: null, messages: null});
+    }
+});
+
+// Create or edit commands route
+app.get('/tools', (req, res) => {
+    if (req.isAuthenticated()) {
+        logger.info('HTTP [User: ' + req.user.Username + '] GET /tools');
+
+        // Get the command from GET parameter
+        const command = req.query.command;
+        if (command) {
+
+        }
+
+        if (command == 'createChat') {
+            // Get the new chat title from GET parameter
+            const chatTitle = req.query.title;
+            if (chatTitle) {
+
+            }
+        }
+
+
+
+    } else {
+        // If is not logged in, redirect to main page
+        res.redirect('/');
     }
 });
 
@@ -320,7 +416,7 @@ app.get('/ws_client.js', (req, res) => {
     logger.info('HTTP [User: ' + req.user.Username + '] GET /ws_client.js');
     // Render the ws_client.ejs file, passing the token value as a variable
     res.setHeader('Content-Type', 'application/javascript');
-    res.render(__dirname + '/pages/ws_client.js.ejs', { user_auth_token: req.user.AuthToken });
+    res.render(__dirname + '/pages/ws_client.js.ejs', { user_auth_token: req.user.AuthToken, user: req.user });
 });
 
 app.get('/login', (req, res) => {
@@ -394,9 +490,16 @@ wss.on('connection', (ws, req) => {
             } else {
                 // Associate the message with the authenticated user
                 const user = getUserByWebsocketConnection(ws);
-                logger.info('WS [User: ' + user.Username + '] Sent message ' + message);
-                // Send a response back to the user
-                sendWebsocketMessageToUser(user.Username, message);
+                const messageJson = JSON.parse(message);
+                if (messageJson) {
+                    logger.info('WS [User: ' + user.Username + '] Sent message [ChatId: ' + messageJson.chatId + '] ' + messageJson.text);
+                    // Send message to al users in chat
+                    messageJson.Username = user.Username;
+                    messageJson.Send = new Date().getTime();
+                    sendWebsocketMessageToUsersInChat(messageJson.chatId, messageJson);
+                } else {
+                    logger.info('WS [User: ' + user.Username + '] Sent command ' + message);
+                }
             }
         });
 
@@ -414,12 +517,32 @@ wss.on('connection', (ws, req) => {
     }
 });
 
-// Send Websocket message to all connections of same user
-function sendWebsocketMessageToUser(username, message) {
-    for (const [username, userConnection] of userSocketMap) {
-        for (const ws of userConnection) {
-            ws.send(username + ': ' + message);
+// Send Websocket message to all connections of users in specified chat
+function sendWebsocketMessageToUsersInChat(chatId, message) {
+    logger.debug('SendWebsocketMessageToUsersInChat - chatId: ' + chatId);
+
+    console.log(message);
+
+    // Save message to the database
+    const result = connSync.query('INSERT INTO Messages (Username, ChatId, Data, Sent) VALUES (?, ?, ?, FROM_UNIXTIME(?))', [message.Username, chatId, JSON.stringify({text: message.text}), message.Send / 1000]);
+    console.log(result);
+
+    // Get list of users in that chat
+    const rows = connSync.query('SELECT Username FROM UsersToChats WHERE ChatId = ? AND Removed IS NULL', [chatId]);
+    logger.debug('Found ' + rows.length + ' members');
+
+    if (rows.length > 0) {
+        for (const [usernameRow, userConnection] of userSocketMap) {
+            logger.debug('Checking user: ' + usernameRow);
+            if (rows.some(function(row) { return row.Username === usernameRow; })) {
+                logger.debug('Sending to connections of user: ' + usernameRow);
+                for (const ws of userConnection) {
+                    ws.send(JSON.stringify(message));
+                }
+            }
         }
+    } else {
+        logger.warn('SendWebsocketMessageToUsersInChat - no users found in chat: ' + chatId);
     }
 }
 

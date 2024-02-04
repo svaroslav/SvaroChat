@@ -7,6 +7,8 @@
 
     <!-- Bootstrap CSS (Locally hosted version from the 'static' folder) -->
     <link href="/static/bootstrap/5.0.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Link to Material Design Icons CSS -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
 </head>
 
 <body>
@@ -21,10 +23,12 @@
           <div class="collapse navbar-collapse" id="navbarSupportedContent">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
               <li class="nav-item">
-                <a class="nav-link" aria-current="page" href="/">Home</a>
+                <a class="nav-link" aria-current="page" href="/"><span class="material-icons">forum</span> Chats</a>
               </li>
+            </ul>
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-auto">
               <li class="nav-item">
-                <a class="nav-link active" aria-current="page" href="/login">Login</a>
+                <a class="nav-link active" aria-current="page" href="/login"><span class="material-icons">login</span> Login</a>
               </li>
             </ul>
           </div>
@@ -76,7 +80,7 @@
 
     <footer class="footer mt-auto py-3 bg-light fixed-bottom">
       <div class="container">
-        <span class="text-muted">&copy; Jan Svárovský 2023-2024 | Version: <%= appInfo.version %></span>
+        <span class="text-muted">&copy; Jan Svárovský 2023-2024 | <a href="https://github.com/svaroslav/svarochat"><span class="material-icons">code</span></a> | Version: <%= appInfo.version %></span>
       </div>
     </footer>
 

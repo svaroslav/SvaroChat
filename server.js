@@ -13,6 +13,7 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 const Mysql = require('mysql2/promise');
 const MysqlSync = require('sync-mysql');
 const Path = require('path');
+const Bcrypt = require('bcrypt');
 const packageJson = require('./package.json');
 
 const appInfo = {version: packageJson.version};
@@ -191,6 +192,13 @@ try {
     done(error);
 }
 });
+
+function createNewUser(username, password) {
+    const hashedPassword = Bcrypt.hash(password, 8); // 8 salt rounds
+
+    // Store the hashedPassword in the database
+    connSync.query('INSERT INTO Users (Username, Password) VALUES (?, ?)', [username, hashedPassword]);
+}
   
 // Fetch users from the database and compare passwords during authentication
 function authenticateUser(username, password) {
@@ -204,7 +212,7 @@ function authenticateUser(username, password) {
             const user = result[0];
     
             // Compare passwords
-            if (password === user.Password) {
+            if (Bcrypt.compare(password, user.Password)) {
                 return user; // Authentication successful
             }
         }
@@ -364,7 +372,7 @@ app.get('/', (req, res) => {
 
         // Get the id of chat from GET parameter
         const chatId = req.query.chatId;
-        
+
         if (chatId) {
             // Check if user is allowed to access this chat
             // Check if the array contains an object with the specified Id

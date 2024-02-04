@@ -460,6 +460,14 @@ app.post('/tools', (req, res) => {
                     
                     if (result.affectedRows > 0) {
                         responseData.Status = 'success';
+                        responseData.Username = username;
+
+                        // Get more details about added user to return to frontend
+                        const newUserData = getUser(username);
+                        
+                        // Take only needed values
+                        responseData.Firstname = newUserData.FirstName;
+                        responseData.Lastname = newUserData.LastName;
                     } else {
                         responseData.Error = 'Failed to insert user to chat';
                     }
@@ -562,6 +570,16 @@ wss.on('connection', (ws, req) => {
         const user = getUserByWebsocketConnection(ws);
         logger.info('WS [User: ' + user.Username + '] Connected');
 
+        // Send notification about user online to members of his chats
+        const usersChats = getUserChats(user.Username);
+        const data = {
+            action: "online",
+            username: user.Username
+        };
+        for (const chat of usersChats) {
+            sendWebsocketDataToUsersInChat(chat.Id, data);
+        }
+
         // Handle WebSocket messages
         ws.on('message', (message) => {
             // Handle connection keep-alive
@@ -576,7 +594,7 @@ wss.on('connection', (ws, req) => {
                     // Send message to al users in chat
                     messageJson.Username = user.Username;
                     messageJson.Send = new Date().getTime();
-                    sendWebsocketMessageToUsersInChat(messageJson.chatId, messageJson);
+                    sendMessageToChat(messageJson.chatId, messageJson);
                 } else {
                     logger.info('WS [User: ' + user.Username + '] Sent command ' + message);
                 }
@@ -588,6 +606,16 @@ wss.on('connection', (ws, req) => {
             const user = getUserByWebsocketConnection(ws);
             handleWebsocketDisconnect(user.Username, ws);
             logger.info('WS [User: ' + user.Username + '] Disconnected');
+
+            // Send notification about user offline to members of his chats
+            const usersChats = getUserChats(user.Username);
+            const data = {
+                action: "offline",
+                username: user.Username
+            };
+            for (const chat of usersChats) {
+                sendWebsocketDataToUsersInChat(chat.Id, data);
+            }
         });
     } else {
         // Non-authenticated user, close the connection or handle as needed
@@ -597,13 +625,20 @@ wss.on('connection', (ws, req) => {
     }
 });
 
-// Send Websocket message to all connections of users in specified chat
-function sendWebsocketMessageToUsersInChat(chatId, message) {
-    logger.debug('SendWebsocketMessageToUsersInChat - chatId: ' + chatId);
+// Send message to specified chat and store it to the database
+function sendMessageToChat(chatId, message) {
+    logger.debug('SendMessageToChat - chatId: ' + chatId);
 
     // Save message to the database
     const result = connSync.query('INSERT INTO Messages (Username, ChatId, Data, Sent) VALUES (?, ?, ?, FROM_UNIXTIME(?))', [message.Username, chatId, JSON.stringify({text: message.text}), message.Send / 1000]);
-    console.log(result);
+
+    // Send message also to websocket
+    sendWebsocketDataToUsersInChat(chatId, message);
+}
+
+// Send Websocket data to all connections of users in specified chat
+function sendWebsocketDataToUsersInChat(chatId, message) {
+    logger.debug('SendWebsocketDataToUsersInChat - chatId: ' + chatId);
 
     // Get list of users in that chat
     const rows = connSync.query('SELECT Username FROM UsersToChats WHERE ChatId = ? AND Removed IS NULL', [chatId]);

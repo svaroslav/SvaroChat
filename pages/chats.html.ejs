@@ -173,10 +173,12 @@
               <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuMembers" data-bs-toggle="dropdown" aria-expanded="false">
                 Members <span class="material-icons fs-5 align-middle">people</span>
               </button>
-              <ul class="dropdown-menu" aria-labelledby="dropdownMenuMembers">
-                <% for (const member of currentChat.Members) { %>
+              <ul class="dropdown-menu" id="memberListDropdown" aria-labelledby="dropdownMenuMembers">
+                <% for (const member of currentChat.Members) {
+                  if (member.Username != user.Username) { %>
                 <li><a class="dropdown-item" href="#"><%- member.IsAdmin[0] == 1 ? '<span class="material-icons fs-3 align-middle">star</span> ' : '' %><%= member.Firstname %> <%= member.Lastname %> (<%= member.Username %>)</a></li>
-                <% } %>
+                <% }
+              } %>
               </ul>
             </div>
           </div>

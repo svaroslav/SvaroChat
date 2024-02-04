@@ -46,29 +46,36 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 const messageJson = JSON.parse(event.data);
                 if (messageJson) {
-                    // Check if received message belongs to current chat or another one
-                    if (messageJson.chatId == currentChatId) {
-                        console.log('Received message from ' + messageJson.Username + ':', messageJson.text);
-                        // Add message to chat history div
-                        const chat = document.getElementById('chat');
-                        let text = ``;
-                        if (messageJson.Username == user.Username) {
-                            text += `<div class="message-right">`;
-                        } else {
-                            text += `<div class="message">`;
-                        }
-                        text += `<span class="user">` + messageJson.Username + `</span><br>
-                                <div class="message-text ` + (messageJson.Username == user.Username ? 'bg-primary' : 'bg-light') + `">` + messageJson.text + `<br></div>
-                                <span class="badge bg-secondary, text-dark">` + (new Date(messageJson.Send).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'})) + `</span>
-                                </div>`;
-                        chat.innerHTML += text;
-
-                        // Adjust scroll position
-                        chat.scrollTop = chat.scrollHeight;
+                    // Check type of message
+                    if (messageJson.action) {
+                        console.log('Received action message: ' + JSON.stringify(messageJson));
                     } else {
-                        console.log('New message from ' + messageJson.Username + ' in chat ' + messageJson.chatId);
-                        // TODO: Update chat list unread counter
+                        // Check if received message belongs to current chat or another one
+                        if (messageJson.chatId == currentChatId) {
+                            console.log('Received message from ' + messageJson.Username + ':', messageJson.text);
+                            // Add message to chat history div
+                            const chat = document.getElementById('chat');
+                            let text = ``;
+                            if (messageJson.Username == user.Username) {
+                                text += `<div class="message-right">`;
+                            } else {
+                                text += `<div class="message">`;
+                            }
+                            text += `<span class="user">` + messageJson.Username + `</span><br>
+                                    <div class="message-text ` + (messageJson.Username == user.Username ? 'bg-primary' : 'bg-light') + `">` + messageJson.text + `<br></div>
+                                    <span class="badge bg-secondary, text-dark">` + (new Date(messageJson.Send).toLocaleDateString('en-GB', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'})) + `</span>
+                                    </div>`;
+                            chat.innerHTML += text;
+
+                            // Adjust scroll position
+                            chat.scrollTop = chat.scrollHeight;
+                        } else {
+                            console.log('New message from ' + messageJson.Username + ' in chat ' + messageJson.chatId);
+                            // TODO: Update chat list unread counter
+                        }
                     }
+
+                    
                 } else {
                     console.error('Received message with invalid format');
                 }
@@ -185,17 +192,9 @@ document.addEventListener('DOMContentLoaded', function () {
             // Handle the response data
             console.log(JSON.stringify(data));
 
-            // Add new item to list of chats
-            const chatList = document.getElementById('chatList');
-            let text = `<li class="list-group-item">
-            <a href="?chatId=` + data.Id + `" class="user-link">`
-              + data.Title +
-              `<span class="badge bg-primary float-end">?</span>
-            </a>
-          </li>`;
-          chatList.innerHTML += text;
-          const chatListDrop = document.getElementById('chatListDropdown');
-          let textDrop = `<li><a class="dropdown-item" href="?chatId=` + data.Id + `">` + data.Title + `</a></li>`;
+            // Add new item to list of chat members
+          const chatListDrop = document.getElementById('memberListDropdown');
+          let textDrop = `<li><a class="dropdown-item" href="#">` + data.Firstname + ' ' + data.Lastname + ' (' + data.Username + `)</a></li>`;
           chatListDrop.innerHTML += textDrop;
         })
         .catch(error => {

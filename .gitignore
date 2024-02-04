@@ -2,3 +2,5 @@
 node_modules/*
 logs/*
 nbproject/*
+static/bootstrap/5.0.2/*
+static/jquery/3.7.1/*

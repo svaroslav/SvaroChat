@@ -1,6 +1,6 @@
 {
     "name": "SvaroChat",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "keywords": [
         "util",
         "functional",
@@ -21,14 +21,19 @@
     },
     "contributors": [],
     "dependencies": {
+        "bcrypt": "^5.1.1",
         "ejs": "^3.1.9",
         "express": "^4.18.2",
         "express-session": "^1.17.3",
+        "mysql2": "^3.9.0",
         "passport": "^0.7.0",
         "passport-google-oauth20": "^2.0.0",
         "passport-local": "^1.0.0",
         "socket.io": "",
         "socket.io-client": "",
+        "sync-mysql": "^3.0.1",
+        "winston": "^3.11.0",
+        "winston-daily-rotate-file": "^4.7.1",
         "ws": "^8.16.0"
     },
     "scripts": {

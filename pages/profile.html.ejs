@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SvaroChat - Profile</title>
+  <!-- Link to Bootstrap CSS -->
+  <link rel="stylesheet" href="/static/bootstrap/5.0.2/css/bootstrap.min.css">
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand navbar-light bg-light">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">SvaroChat</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link" aria-current="page" href="/">Home</a>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <%= user.Username %>
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+              <li><a class="dropdown-item active" href="/profile">Profile</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="/logout">Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div class="container">
+      <div>
+        <h1>Profile</h1>
+        <table>
+          <thead>
+            <tr>
+              <th></th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+<tr>
+  <th>Username:</th>
+  <td><%= user.Username %></td>
+</tr>
+<tr>
+  <th>Firstname:</th>
+  <td><%= user.FirstName %></td>
+</tr>
+<tr>
+  <th>Lastname:</th>
+  <td><%= user.LastName %></td>
+</tr>
+<tr>
+  <th>Registered:</th>
+  <td><%= new Date(user.Registered).toLocaleDateString() %></td>
+</tr>
+          </tbody>
+        </table>
+      </div>
+  </div>
+
+  <!-- Bootstrap JS and your custom scripts -->
+  <script src="/static/jquery/3.7.1/jquery.min.js"></script>
+  <script src="/static/bootstrap/5.0.2/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

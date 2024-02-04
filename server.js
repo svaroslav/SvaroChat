@@ -8,34 +8,94 @@ const Passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const Url = require('url');
+const Winston = require('winston');
+const DailyRotateFile = require('winston-daily-rotate-file');
+const Mysql = require('mysql2/promise');
+const MysqlSync = require('sync-mysql');
+const Path = require('path');
 
-// Custom console logging function
-function enableConsoleTimestamps() {
-    // Keep the system one
-    const systemLog = console.log;
-    const systemWarn = console.warn;
-    const systemError = console.error;
+// Define a custom format for the log entries
+const customFormat = Winston.format.printf(({ level, message, timestamp }) => {
+    return `[${timestamp}] ${level.toUpperCase()} ${message}`;
+});
 
-    console.log = function (...args) {
-        const timestamp = new Date().toUTCString();
-        systemLog.call(console, '[' + timestamp + ']', ...args);
-    };
-    console.warn = function (...args) {
-        const timestamp = new Date().toUTCString();
-        systemWarn.call(console, '[' + timestamp + ']', ...args);
-    };
-    console.error = function (...args) {
-        const timestamp = new Date().toUTCString();
-        systemError.call(console, '[' + timestamp + ']', ...args);
-    };
-}
+// Create a Winston logger
+const logger = Winston.createLogger({
+    level: 'debug', // Set the log level to debug
 
-// Enable timestamps for console outputs
-enableConsoleTimestamps();
+    transports: [
+        // Log to the console
+        new Winston.transports.Console({
+            format: Winston.format.combine(
+                Winston.format.timestamp({ format: 'ddd, DD MMM YYYY HH:mm:ss' }), // Custom timestamp format
+                customFormat
+            ),
+        }),
 
+        // Log to a file with daily rotation
+        new DailyRotateFile({
+            filename: 'logs/server-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m', // Maximum log file size before rotation
+            maxFiles: '14d', // Keep logs for 14 days
+            format: Winston.format.combine(
+                Winston.format.timestamp({ format: 'ddd, DD MMM YYYY HH:mm:ss' }), // Custom timestamp format
+                customFormat
+            ),
+        }),
+    ],
+});
+
+// Make sure to close the logger when your application exits
+process.on('exit', () => {
+    // If necessary, perform any cleanup here
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+    logger.error(`Uncaught Exception: ${err.message}`);
+    process.exit(1); // Exit with an error code
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error(`Unhandled Rejection: ${reason}`);
+    process.exit(1); // Exit with an error code
+});
+
+// Starting app
+logger.info('Starting server');
+
+// DB connection info for synchronous queries
+const mysqlSyncConnInfo = {
+    host: '192.168.0.4',
+    port: 3307,
+    user: 'svarochat',
+    password: 'NA4aNOfiBocE.',
+    database: 'svarochat'
+};
+// Create a synchronous connection to the database
+logger.info('Connecting to the database');
+const connSync = new MysqlSync(mysqlSyncConnInfo);
+
+// Create a async MySQL pool
+// const pool = Mysql.createPool({
+//     host: '192.168.0.4',
+//     port: 3307,
+//     user: 'svarochat',
+//     password: 'NA4aNOfiBocE.',
+//     database: 'svarochat',
+//     waitForConnections: true,
+//     connectionLimit: 10,
+//     queueLimit: 0
+// });
+
+// Setup server
 const app = Express();
 // Set EJS as the view engine
 app.set('view engine', 'ejs');
+app.set('views', __dirname + '/pages');
 const server = Http.createServer(app);
 const wss = new WebSocket.Server({server});
 
@@ -52,13 +112,6 @@ app.use(Session({
 app.use(Passport.initialize());
 app.use(Passport.session());
 
-// In-memory user storage (Replace this with a database in a real-world scenario)
-const localUsers = [
-    {id: 1, username: 'user', password: 'password', authToken: 'auth'},
-    {id: 2, username: 'user1', password: 'password1', authToken: 'auth1'},
-    {id: 3, username: 'user2', password: 'password2', authToken: 'auth2'}
-];
-
 // Passport strategy for local authentication
 Passport.use(new LocalStrategy(
     {
@@ -66,13 +119,13 @@ Passport.use(new LocalStrategy(
         passwordField: 'password', // Specify the field name for the password
     },
     (username, password, done) => {
-        //console.log('Authentication strategy is called for username:', username);
-        const user = localUsers.find(u => u.username === username && u.password === password);
+        //logger.info('Authentication strategy is called for username:', username);
+        const user = authenticateUser(username, password);
         if (user) {
-            //console.log('Authentication successful:', user.username);
+            //logger.info('Authentication successful:', user.username);
             return done(null, user);
         } else {
-            //console.log('Authentication failed for username:', username);
+            //logger.info('Authentication failed for username:', username);
             return done(null, false, {message: 'Incorrect username or password'});
         }
     }
@@ -108,79 +161,216 @@ app.get('/auth/google/callback',
 
 // Serialize user information into the session
 Passport.serializeUser((user, done) => {
-    done(null, user.id);
+    if (user && user.Username) {
+        logger.debug('SerializeUser: ' + user.Username);
+        done(null, user.Username);
+    } else {
+        done(new Error('User object or Username not available'));
+    }
 });
-
+  
 // Deserialize user information from the session
-Passport.deserializeUser((id, done) => {
-    // Assuming users is an array or some data structure containing user objects
-    const user = localUsers.find(u => u.id === id);
+Passport.deserializeUser((username, done) => {
+try {
+    logger.debug('DeserializeUser: ' + username);
+    // Get user information from the database
+    const rows = connSync.query('SELECT * FROM Users WHERE Username = ?', [username]);
 
-    if (user) {
+    if (rows.length > 0) {
         // If the user is found, pass the user object to done
-        done(null, user);
+        done(null, rows[0]);
     } else {
         // If the user is not found, pass an error to done
         done(new Error('User not found'));
     }
+} catch (error) {
+    // Handle database errors
+    done(error);
+}
 });
+  
+// Fetch users from the database and compare passwords during authentication
+function authenticateUser(username, password) {
+    try {
+        logger.debug('AuthenticateUser: ' + username);
+
+        // Fetch user from the database based on the username
+        const result = connSync.query('SELECT * FROM Users WHERE Username = ?', [username]);
+    
+        if (result.length > 0) {
+            const user = result[0];
+    
+            // Compare passwords
+            if (password === user.Password) {
+                return user; // Authentication successful
+            }
+        }
+    
+        return null; // User not found or password mismatch
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+  
+// Fetch user data from the database
+function getUser(username) {
+    try {
+        logger.debug('GetUser: ' + username);
+        // Fetch user from the database based on the username
+        const rows = connSync.query('SELECT * FROM Users WHERE Username = ?', [username]);
+        
+        if (rows.length > 0) {
+            const user = rows[0];
+    
+            return user;
+        }
+    
+        return null; // User not found
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+  
+// Fetch user's chats from the database
+function getUserChats(username) {
+    try {
+        logger.debug('GetUserChats: ' + username);
+        // Fetch user's chats from the database based on the username
+        const chats = connSync.query('SELECT Chats.* FROM Chats, UsersToChats WHERE UsersToChats.Username = ?', [username]);
+        
+        if (chats.length > 0) {
+            return chats;
+        }
+    
+        return null; // User not found
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+  
+// Fetch user data from the database
+function getUserByAuthToken(authToken) {
+    try {
+        // Fetch user from the database based on the username
+        const rows = connSync.query('SELECT * FROM Users WHERE AuthToken = ?', [authToken]);
+        
+        if (rows.length > 0) {
+            const user = rows[0];
+            logger.debug('GetUserByAuthToken - user: ', user.Username);
+    
+            return user;
+        }
+    
+        logger.warn('Failed to get user by authToken');
+        return null; // User not found
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
 
 // Serve static files from the 'static' folder
-app.use(Express.static('static'));
+app.use('/static', Express.static(Path.join(__dirname, 'static'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.css')) {
+            res.setHeader('Content-Type', 'text/css');
+        } else if (filePath.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+    },
+}));
 
 // Define routes
 app.get('/', (req, res) => {
     if (req.isAuthenticated()) {
-        console.log('HTTP [User: ' + req.user.username + '] GET /');
-        res.sendFile(__dirname + '/pages/dashboard.html');
+        logger.info('HTTP [User: ' + req.user.Username + '] GET /');
+
+        // Get the id of chat from GET parameter
+        const chatId = req.query.chatId;
+        if (chatId) {
+            req.user.chatId = chatId;
+        }
+
+        // Get list of chats of current user
+        const userChats = getUserChats(req.user.Username);
+        req.user.chats = userChats;
+
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user});
     } else {
-        console.log('HTTP GET / Not authenticated. Redirecting to login page.');
-        res.redirect('/login'); // Redirect to login page if not authenticated
+        logger.info('HTTP GET /');
+        res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: false, user: null});
+    }
+});
+
+app.get('/profile', (req, res) => {
+    if (req.isAuthenticated()) {
+        // Is logged in, render login page
+        logger.info('HTTP GET /profile');
+        res.render(__dirname + '/pages/profile.html.ejs', { user: req.user });
+    } else {
+        // If is not logged in, redirect to main page
+        res.redirect('/');
     }
 });
 
 app.get('/ws_client.js', (req, res) => {
-    console.log('HTTP [User: ' + req.user.username + '] GET /ws_client.js');
+    logger.info('HTTP [User: ' + req.user.Username + '] GET /ws_client.js');
     // Render the ws_client.ejs file, passing the token value as a variable
-    res.render(__dirname + '/pages/ws_client', { user_auth_token: req.user.authToken });
+    res.setHeader('Content-Type', 'application/javascript');
+    res.render(__dirname + '/pages/ws_client.js.ejs', { user_auth_token: req.user.AuthToken });
 });
 
 app.get('/login', (req, res) => {
-    console.log('HTTP GET /login');
-    res.sendFile(__dirname + '/pages/login.html');
+    if (req.isAuthenticated()) {
+        // If is logged in, redirect to main page
+        res.redirect('/');
+    } else {
+        // Not logged in, render login page
+        logger.info('HTTP GET /login');
+        res.render(__dirname + '/pages/login.html.ejs', {  });
+    }
 });
 
 app.post('/login', (req, res, next) => {
-    console.log('HTTP POST /login');
+    logger.info('HTTP POST /login');
     Passport.authenticate('local', (err, user, info) => {
         if (err) {
-            console.error(err);
+            logger.error(err);
             return next(err);
         }
         if (!user) {
-            console.log('HTTP Authentication of username (' + req.body['username'] + ') failed:', info.message);
+            logger.warn('HTTP Authentication of username (' + req.body['username'] + ') failed:', info.message);
             return res.redirect('/login');
         }
         req.logIn(user, (err) => {
             if (err) {
-                console.error(err);
+                logger.error(err);
                 return next(err);
             }
-            console.log('HTTP [User: ' + user.username + '] Authenticated');
+            logger.info('HTTP [User: ' + user.Username + '] Authenticated');
             return res.redirect('/');
         });
     })(req, res, next);
 });
 
 app.get('/logout', (req, res) => {
-    console.log('HTTP [User: ' + req.user.username + '] GET /logout');
-    req.logout((err) => {
-        if (err) {
-            console.log('HTTP Error logging out');
-            return res.status(500).send('Error logging out');
-        }
+    if (req.isAuthenticated()) {
+        const username = req.user.Username;
+        logger.info('HTTP [User: ' + username + '] GET /logout');
+        req.logout((err) => {
+            if (err) {
+                logger.warn('HTTP Error logging out');
+                return res.status(500).send('Error logging out');
+            }
+            logger.info('HTTP [User: ' + username + '] Logged out');
+            res.redirect('/login');
+        });
+    } else {
         res.redirect('/login');
-    });
+    }
 });
 
 // Websocket connection mapping user ID to Websocket connection
@@ -194,7 +384,7 @@ wss.on('connection', (ws, req) => {
     // Check authentication based on the authToken
     if (authenticateWebsocket(ws, authToken)) {
         const user = getUserByWebsocketConnection(ws);
-        console.log('WS [User: ' + user.username + '] Connected');
+        logger.info('WS [User: ' + user.Username + '] Connected');
 
         // Handle WebSocket messages
         ws.on('message', (message) => {
@@ -204,32 +394,31 @@ wss.on('connection', (ws, req) => {
             } else {
                 // Associate the message with the authenticated user
                 const user = getUserByWebsocketConnection(ws);
-                console.log('WS [User: ' + user.username + '] Sent message ' + message);
+                logger.info('WS [User: ' + user.Username + '] Sent message ' + message);
                 // Send a response back to the user
-                sendWebsocketMessageToUser(user.id, message);
+                sendWebsocketMessageToUser(user.Username, message);
             }
         });
 
         // Handle Websocket disconnection
         ws.on('close', () => {
             const user = getUserByWebsocketConnection(ws);
-            handleWebsocketDisconnect(user.id, ws);
-            console.log('WS [User: ' + user.username + '] Disconnected');
+            handleWebsocketDisconnect(user.Username, ws);
+            logger.info('WS [User: ' + user.Username + '] Disconnected');
         });
     } else {
         // Non-authenticated user, close the connection or handle as needed
-        console.log('WS User not authenticated');
+        logger.warn('WS User not authenticated');
         ws.send('Invalid authentication');
         ws.close();
     }
 });
 
 // Send Websocket message to all connections of same user
-function sendWebsocketMessageToUser(userId, message) {
-    for (const [userId, userConnection] of userSocketMap) {
+function sendWebsocketMessageToUser(username, message) {
+    for (const [username, userConnection] of userSocketMap) {
         for (const ws of userConnection) {
-            const user = getUserByID(userId);
-            ws.send(user.username + ': ' + message);
+            ws.send(username + ': ' + message);
         }
     }
 }
@@ -237,18 +426,20 @@ function sendWebsocketMessageToUser(userId, message) {
 // Check if the new connection on websocket is coming from authenticated user
 function authenticateWebsocket(ws, authToken) {
     // Get the local user corresponding to provided authToken
-    const user = localUsers.find(u => u.authToken === authToken);
+    const user = getUserByAuthToken(authToken);
 
     if (user) {
         // If the user is found, map it to this connection
         // Check if the user ID is already in the map
-        if (userSocketMap.has(user.id)) {
+        if (userSocketMap.has(user.Username)) {
             // If it is, add the new Websocket connection to the existing array
-            const existingConnections = userSocketMap.get(user.id);
+            const existingConnections = userSocketMap.get(user.Username);
             existingConnections.push(ws);
+            logger.debug('AuthenticateWebsocket - add connection to existing user: ' + user.Username);
         } else {
             // If it's not, create a new array with the WebSocket connection
-            userSocketMap.set(user.id, [ws]);
+            userSocketMap.set(user.Username, [ws]);
+            logger.debug('AuthenticateWebsocket - add new user: ' + user.Username);
         }
         return true;
     } else {
@@ -258,42 +449,38 @@ function authenticateWebsocket(ws, authToken) {
 }
 
 // Handle websocket client disconnecting
-function handleWebsocketDisconnect(userId, disconnectedWs) {
-    if (userSocketMap.has(userId)) {
-        const existingConnections = userSocketMap.get(userId);
+function handleWebsocketDisconnect(username, disconnectedWs) {
+    if (userSocketMap.has(username)) {
+        logger.debug('HandleWebsocketDisconnect - user: ' + username);
+        const existingConnections = userSocketMap.get(username);
         // Remove the disconnected WebSocket from the array
         userSocketMap.set(
-            userId,
+            username,
             existingConnections.filter((ws) => ws !== disconnectedWs)
         );
 
         // If there are no more connections for the user, you can remove the entry
         if (existingConnections.length === 1 && existingConnections[0] === disconnectedWs) {
-            userSocketMap.delete(userId);
+            userSocketMap.delete(username);
         }
     }
 }
 
 // Gets the user's object from websocket to user map
 function getUserByWebsocketConnection(connection) {
-    for (const [userId, userConnection] of userSocketMap) {
+    for (const [username, userConnection] of userSocketMap) {
         if (userConnection.includes(connection)) {
-            const user = localUsers.find(u => u.id === userId);
+            logger.debug('GetUserByWebsocketConnection: ' + username);
+            const user = getUser(username);
             return user;
         }
     }
     
     // If the connection is not found, return null or handle accordingly
-    console.log('WS Failed to get user by Websocket connection');
+    logger.warn('WS Failed to get user by Websocket connection');
     return null;
 }
 
-// Get user object by its id
-function getUserByID(userId) {
-    const user = localUsers.find(u => u.id === userId);
-    return user;
-}
-
 server.listen(8080, () => {
-    console.log('Server is listening on port 8080');
+    logger.info('Server is listening on port 8080');
 });

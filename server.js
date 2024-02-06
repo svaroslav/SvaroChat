@@ -214,7 +214,12 @@ function authenticateUser(username, password) {
     
             // Compare passwords
             if (Bcrypt.compare(password, user.Password)) {
-                return user; // Authentication successful
+                // Authentication successful
+
+                // Update last login value in database
+                const result1 = connSync.query('UPDATE Users SET LastLogin = CURRENT_TIMESTAMP() WHERE Username = ?', [username]);
+    
+                return user;
             }
         }
     
@@ -289,13 +294,13 @@ function getChatInfo(chatId) {
         logger.debug('GetChatInfo: ' + chatId);
         // Fetch user's chats from the database based on the username
         const chatInfo = connSync.query('SELECT * FROM Chats WHERE Id = ?', [chatId]);
-        const userList = connSync.query('SELECT DISTINCT UsersToChats.*, Users.Firstname, Users.Lastname FROM UsersToChats, Users WHERE ChatId = ? AND UsersToChats.Username = Users.Username', [chatId]);
+        const userList = connSync.query('SELECT DISTINCT UsersToChats.*, Users.Firstname, Users.Lastname FROM UsersToChats, Users WHERE ChatId = ? AND UsersToChats.Username = Users.Username AND UsersToChats.Removed IS NULL', [chatId]);
         
         if (chatInfo.length > 0 && userList.length > 0) {
             const info = {Info: chatInfo[0], Members: userList};
             return info;
         }
-    
+        
         return null; // User not found
     } catch (error) {
         // Handle database errors
@@ -368,6 +373,44 @@ function addUserToChat(username, chatId) {
     }
 }
 
+// Remove specified user from chat
+function removeUserFromChat(username, chatId) {
+    try {
+        logger.debug('RemoveUserFromChat (' + username + '): ' + chatId);
+
+        // Link created chat to its owner user
+        const result = connSync.query('UPDATE UsersToChats SET Removed = CURRENT_TIMESTAMP(6) WHERE Username = ? AND ChatId = ?', [username, chatId]);
+        
+        if (result.affectedRows > 0) {
+            return result;
+        }
+
+        return false; // Insertion failed
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+
+// Update user's last online timestamp in database
+function updateUserLastOnline(username) {
+    try {
+        logger.debug('UpdateUserLastOnline: ' + username);
+
+        // Link created chat to its owner user
+        const result = connSync.query('UPDATE Users SET LastOnline = CURRENT_TIMESTAMP() WHERE Username = ?', [username]);
+        
+        if (result.affectedRows > 0) {
+            return true;
+        }
+
+        return false; // Insertion failed
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+
 // Serve static files from the 'static' folder
 app.use('/static', Express.static(Path.join(__dirname, 'static'), {
     setHeaders: (res, filePath) => {
@@ -410,7 +453,7 @@ app.get('/', (req, res) => {
                 logger.info('User ' + req.user.Username + ' tried to access chat ' + chatId + ' in which is not a member');
             }
         }
-
+        
         res.render(__dirname + '/pages/chats.html.ejs', {loggedIn: true, user: req.user, chats: userChats, messages: chatMessages, currentChat: currentChat, appInfo: appInfo});
     } else {
         logger.info('HTTP GET /');
@@ -433,9 +476,7 @@ app.post('/tools', (req, res) => {
                 const chatTitle = req.body["title"];
                 if (chatTitle) {
                     // Insert new chat into database
-                    const result = createNewChat(req.user.Username, chatTitle);
-
-                    //TODO: add current user as owner of new chat
+                    const [result, result1] = createNewChat(req.user.Username, chatTitle);
                     
                     if (result.affectedRows > 0) {
                         responseData.Status = 'success';
@@ -455,8 +496,6 @@ app.post('/tools', (req, res) => {
                 if (chatId && username) {
                     // Insert new chat into database
                     const result = addUserToChat(username, chatId);
-
-                    //TODO: add current user as owner of new chat
                     
                     if (result.affectedRows > 0) {
                         responseData.Status = 'success';
@@ -474,9 +513,28 @@ app.post('/tools', (req, res) => {
                 } else {
                     responseData.Error = 'No username and/or chat id';
                 }
+            } else if (command == 'removeUser') {
+                // Get the new chat title from GET parameter
+                const chatId = req.body["chatId"];
+                const username = req.body["username"];
+                if (chatId && username) {
+                    // Insert new chat into database
+                    const result = removeUserFromChat(username, chatId);
+                    
+                    if (result.affectedRows > 0) {
+                        responseData.Status = 'success';
+                        responseData.Username = username;
+                    } else {
+                        responseData.Error = 'Failed to remove user from chat';
+                    }
+                } else {
+                    responseData.Error = 'No username and/or chat id';
+                }
+            } else {
+                responseData.Error = 'Unknown command';
             }
         } else {
-            responseData.Error = 'Invalid command';
+            responseData.Error = 'Missing command';
         }
 
         // Set the Content-Type header and send JSON response
@@ -576,8 +634,10 @@ wss.on('connection', (ws, req) => {
             action: "online",
             username: user.Username
         };
-        for (const chat of usersChats) {
-            sendWebsocketDataToUsersInChat(chat.Id, data);
+        if (usersChats) {
+            for (const chat of usersChats) {
+                sendWebsocketDataToUsersInChat(chat.Id, data);
+            }
         }
 
         // Handle WebSocket messages
@@ -607,14 +667,19 @@ wss.on('connection', (ws, req) => {
             handleWebsocketDisconnect(user.Username, ws);
             logger.info('WS [User: ' + user.Username + '] Disconnected');
 
+            // Update last online value in database
+            updateUserLastOnline(user.Username);
+
             // Send notification about user offline to members of his chats
             const usersChats = getUserChats(user.Username);
             const data = {
                 action: "offline",
                 username: user.Username
             };
-            for (const chat of usersChats) {
-                sendWebsocketDataToUsersInChat(chat.Id, data);
+            if (usersChats) {
+                for (const chat of usersChats) {
+                    sendWebsocketDataToUsersInChat(chat.Id, data);
+                }
             }
         });
     } else {

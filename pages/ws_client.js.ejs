@@ -109,6 +109,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Add click event listener to the "Send Message" button
     document.getElementById('send').addEventListener('click', sendMessage);
+    document.getElementById('message').addEventListener('keydown', function (event) {
+        // Check if the key code is for "Enter"
+        if (event.key === 'Enter' && !event.shiftKey) {
+            // Handle the Enter key press here
+            sendMessage();
+        }
+    });
 
     // Create new chat call to backend
     function createNewChat() {
@@ -214,9 +221,59 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#inputDialogAddUserToChat').modal('show');
     }
 
-    // Add click event listener to the "Add new chat" button
+    // Add click event listener to the "Add user to chat" button
     document.getElementById('addUserToChat').addEventListener('click', addUserToChat);
     document.getElementById('callModalAddUserToChat').addEventListener('click', callModalAddUserToChat);
+    
+    // Remove user from current chat call to backend
+    function removeUserFromChat() {
+        // Get the user input
+        const userInput = document.getElementById('userInputRemoveUserFromChat').value;
+
+        // Do something with the user input
+        console.log('Calling remove user from chat: ' + userInput + ', ' + currentChatId);
+
+        const url = '/tools';
+        const data = { command: 'removeUser', username: userInput, chatId: currentChatId };
+
+        fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            // Add any other headers as needed
+        },
+        body: JSON.stringify(data),
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Handle the response data
+            console.log(JSON.stringify(data));
+
+
+        })
+        .catch(error => {
+            // Handle errors
+            console.error('Error:', error);
+        });
+
+        // Close the modal
+        $('#inputDialogRemoveUserFromChat').modal('hide');
+    }
+
+    function callModalRemoveUserFromChat(event) {
+        // Clear the input field on every open
+        document.getElementById('userInputRemoveUserFromChat').value = event.currentTarget.dataset.username;
+        
+        // Show the modal
+        $('#inputDialogRemoveUserFromChat').modal('show');
+    }
+
+    // Add click event listener to the "Remove user from chat" button
+    document.getElementById('removeUserFromChat').addEventListener('click', removeUserFromChat);
+    const elements = document.getElementsByClassName('chatRemoveMember');
+    for (const button of elements) {
+        button.addEventListener('click', callModalRemoveUserFromChat);
+    }
 
     // Open initial WebSocket connection
     openSocket();

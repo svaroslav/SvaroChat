@@ -378,7 +378,6 @@ function removeUserFromChat(username, chatId) {
     try {
         logger.debug('RemoveUserFromChat (' + username + '): ' + chatId);
 
-        // Link created chat to its owner user
         const result = connSync.query('UPDATE UsersToChats SET Removed = CURRENT_TIMESTAMP(6) WHERE Username = ? AND ChatId = ?', [username, chatId]);
         
         if (result.affectedRows > 0) {
@@ -397,8 +396,25 @@ function updateUserLastOnline(username) {
     try {
         logger.debug('UpdateUserLastOnline: ' + username);
 
-        // Link created chat to its owner user
         const result = connSync.query('UPDATE Users SET LastOnline = CURRENT_TIMESTAMP() WHERE Username = ?', [username]);
+        
+        if (result.affectedRows > 0) {
+            return true;
+        }
+
+        return false; // Insertion failed
+    } catch (error) {
+        // Handle database errors
+        throw error;
+    }
+}
+
+// Update user's last readed in specified chat timestamp in database
+function updateUserLastReadedInChat(username, chatId) {
+    try {
+        logger.debug('UpdateUserLastReadedInChat: (' + username + '): ' + chatId);
+
+        const result = connSync.query('UPDATE UsersToChats SET LastReaded = CURRENT_TIMESTAMP(6) WHERE Username = ? AND ChatId = ?', [username, chatId]);
         
         if (result.affectedRows > 0) {
             return true;
@@ -592,7 +608,7 @@ app.post('/login', (req, res, next) => {
                 logger.error(err);
                 return next(err);
             }
-            logger.info('HTTP [User: ' + user.Username + '] Authenticated');
+            logger.info('HTTP [User: ' + user.Username + '] Authenticated (IP: ' + req.headers['x-forwarded-for'] + ')');
             return res.redirect('/');
         });
     })(req, res, next);
@@ -626,7 +642,7 @@ wss.on('connection', (ws, req) => {
     // Check authentication based on the authToken
     if (authenticateWebsocket(ws, authToken)) {
         const user = getUserByWebsocketConnection(ws);
-        logger.info('WS [User: ' + user.Username + '] Connected');
+        logger.info('WS [User: ' + user.Username + '] Connected (IP: ' + req.headers['x-forwarded-for'] + ')');
 
         // Send notification about user online to members of his chats
         const usersChats = getUserChats(user.Username);
@@ -634,11 +650,12 @@ wss.on('connection', (ws, req) => {
             action: "online",
             username: user.Username
         };
-        if (usersChats) {
-            for (const chat of usersChats) {
-                sendWebsocketDataToUsersInChat(chat.Id, data);
-            }
-        }
+        // if (usersChats) {
+        //     for (const chat of usersChats) {
+        //         sendWebsocketDataToUsersInChat(chat.Id, data);
+        //     }
+        // }
+        sendWebsocketDataToContactsOfUser(user.Username, data);
 
         // Handle WebSocket messages
         ws.on('message', (message) => {
@@ -651,10 +668,14 @@ wss.on('connection', (ws, req) => {
                 const messageJson = JSON.parse(message);
                 if (messageJson) {
                     logger.info('WS [User: ' + user.Username + '] Sent message [ChatId: ' + messageJson.chatId + '] ' + messageJson.text);
+                    
                     // Send message to al users in chat
                     messageJson.Username = user.Username;
                     messageJson.Send = new Date().getTime();
                     sendMessageToChat(messageJson.chatId, messageJson);
+
+                    // Update timestamp of last readed - if the user sent message then probably also readed the previous ones
+                    updateUserLastReadedInChat(user.Username, messageJson.chatId);
                 } else {
                     logger.info('WS [User: ' + user.Username + '] Sent command ' + message);
                 }
@@ -676,11 +697,12 @@ wss.on('connection', (ws, req) => {
                 action: "offline",
                 username: user.Username
             };
-            if (usersChats) {
-                for (const chat of usersChats) {
-                    sendWebsocketDataToUsersInChat(chat.Id, data);
-                }
-            }
+            // if (usersChats) {
+            //     for (const chat of usersChats) {
+            //         sendWebsocketDataToUsersInChat(chat.Id, data);
+            //     }
+            // }
+            sendWebsocketDataToContactsOfUser(user.Username, data);
         });
     } else {
         // Non-authenticated user, close the connection or handle as needed
@@ -721,6 +743,44 @@ function sendWebsocketDataToUsersInChat(chatId, message) {
         }
     } else {
         logger.warn('SendWebsocketMessageToUsersInChat - no users found in chat: ' + chatId);
+    }
+}
+
+// Send Websocket data to all connections of users in specified chat - distinct
+function sendWebsocketDataToContactsOfUser(username, data) {
+    logger.debug('SendWebsocketDataToContactsOfUser - username: ' + username);
+
+    const usersChats = getUserChats(username);
+    let chatIds = [];
+    if (usersChats) {
+        for (const chat of usersChats) {
+            chatIds.push(chat.Id);
+        }
+    }
+
+    // Construct a comma-separated list of placeholders for the array elements
+    const placeholders = chatIds.map(() => '?').join(',');
+
+    // Prepare the SQL query with the dynamic placeholders
+    const sql = `SELECT DISTINCT Username 
+                FROM UsersToChats 
+                WHERE ChatId IN (${placeholders}) AND Removed IS NULL`;
+
+    // Execute the query with the array of chatIds as parameters
+    const rows = connSync.query(sql, chatIds);logger.debug('Found ' + rows.length + ' members');
+
+    if (rows.length > 0) {
+        for (const [usernameRow, userConnection] of userSocketMap) {
+            logger.debug('Checking user: ' + usernameRow);
+            if (rows.some(function(row) { return row.Username === usernameRow; })) {
+                logger.debug('Sending to connections of user: ' + usernameRow);
+                for (const ws of userConnection) {
+                    ws.send(JSON.stringify(data));
+                }
+            }
+        }
+    } else {
+        logger.warn('SendWebsocketDataToContactsOfUser - no users found in chats: ' + chatIds);
     }
 }
 

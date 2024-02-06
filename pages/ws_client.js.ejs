@@ -49,6 +49,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Check type of message
                     if (messageJson.action) {
                         console.log('Received action message: ' + JSON.stringify(messageJson));
+                        
+                        if (messageJson.action == 'online' && messageJson.username != user.Username) {
+                            showToast('User ' + messageJson.username + ' is online');
+                        } else if (messageJson.action == 'offline' && messageJson.username != user.Username) {
+                            showToast('User ' + messageJson.username + ' is offline');
+                        }
                     } else {
                         // Check if received message belongs to current chat or another one
                         if (messageJson.chatId == currentChatId) {
@@ -112,6 +118,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('message').addEventListener('keydown', function (event) {
         // Check if the key code is for "Enter"
         if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
             // Handle the Enter key press here
             sendMessage();
         }
@@ -249,7 +256,9 @@ document.addEventListener('DOMContentLoaded', function () {
             // Handle the response data
             console.log(JSON.stringify(data));
 
-
+            if (data.status == 'success') {
+                showToast('User removed from this chat.');
+            }
         })
         .catch(error => {
             // Handle errors
@@ -273,6 +282,47 @@ document.addEventListener('DOMContentLoaded', function () {
     const elements = document.getElementsByClassName('chatRemoveMember');
     for (const button of elements) {
         button.addEventListener('click', callModalRemoveUserFromChat);
+    }
+
+    // Function to dynamically generate and show a new toast message
+    function showToast(message) {
+        // Create toast elements
+        var toastElement = document.createElement('div');
+        toastElement.classList.add('toast');
+        toastElement.setAttribute('role', 'alert');
+        toastElement.setAttribute('aria-live', 'assertive');
+        toastElement.setAttribute('aria-atomic', 'true');
+        toastElement.style.zIndex = 1000; // Set a higher z-index value
+
+        var innerDiv = document.createElement('div');
+        innerDiv.classList.add('toast-body');
+        innerDiv.textContent = message;
+        innerDiv.style.display = 'inline-block';
+        toastElement.appendChild(innerDiv);
+
+        var closeButton = document.createElement('button');
+        closeButton.classList.add('btn-close', 'me-2', 'm-auto');
+        closeButton.setAttribute('type', 'button');
+        closeButton.setAttribute('data-bs-dismiss', 'toast');
+        closeButton.setAttribute('aria-label', 'Close');
+        closeButton.style.display = 'inline-block'; // Keep the close button on the same line
+        closeButton.style.marginLeft = 'auto'; // Move to right
+        toastElement.appendChild(closeButton);
+
+        // Add the toast to the container
+        document.getElementById('toastContainer').appendChild(toastElement);
+
+        // Show the toast
+        var bsToast = new bootstrap.Toast(toastElement);
+        bsToast.show();
+
+        // Use setTimeout to hide and remove the toast after 10 seconds
+        setTimeout(function() {
+        bsToast.hide();
+        setTimeout(function() {
+            toastElement.remove();
+        }, 500); // Wait for the hide animation to complete before removing the element
+        }, 10000); // 10 seconds
     }
 
     // Open initial WebSocket connection

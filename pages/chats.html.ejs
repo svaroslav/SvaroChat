@@ -49,8 +49,12 @@
       }
 
       #chat {
-        max-height: calc(100vh - 400px); /* Adjust the value based on your navbar and button height */
+        max-height: calc(100vh - 350px); /* Adjust the value based on your navbar and button height */
         overflow-y: auto;
+      }
+
+      #toastContainer {
+        z-index: 1000; /* Set a higher z-index value */
       }
     </style>
     <% } %>
@@ -96,6 +100,9 @@
   <!-- Main content -->
   <div class="container-fluid">
     <% if (loggedIn) { %>
+      <!-- Add a container for toast messages -->
+      <div id="toastContainer" aria-live="polite" aria-atomic="true" style="position: absolute;"></div>
+      
       <!-- New Chat Input Dialog Modal -->
       <div class="modal fade" id="inputDialogNewChat" tabindex="-1" aria-labelledby="inputDialogLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -114,6 +121,7 @@
           </div>
         </div>
       </div>
+
       <!-- Add user to chat Input Dialog Modal -->
       <div class="modal fade" id="inputDialogAddUserToChat" tabindex="-1" aria-labelledby="inputDialog2Label" aria-hidden="true">
         <div class="modal-dialog">
@@ -132,6 +140,7 @@
           </div>
         </div>
       </div>
+      
       <!-- Remove user from chat Input Dialog Modal -->
       <div class="modal fade" id="inputDialogRemoveUserFromChat" tabindex="-1" aria-labelledby="inputDialog3Label" aria-hidden="true">
         <div class="modal-dialog">
@@ -153,23 +162,29 @@
       </div>
 
       <div class="row">
-        <!-- Left column for the list -->
-        <div class="col-md-3">
+        <!-- Left column for the list, hide for small screens -->
+        <% if (currentChat) { %>
+        <div class="col-md-3 d-none d-md-block">
+          <% } else { %>
+            <div class="col-md-3">
+          <% } %>
           <h4>My chats</h4>
-          <button id="callModalCreateNewChat" class="btn btn-secondary btn-sm">New chat <span class="material-icons fs-5 align-middle">add_comment</span></button>
-          <!-- Use a dropdown for small screens -->
-          <div class="dropdown d-md-none">
-            <button class="btn btn-secondary dropdown-toggle w-100" type="button" id="chatListDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
-              Select a chat
-            </button>
-            <ul class="dropdown-menu" id="chatListDropdown" aria-labelledby="chatListDropdownButton">
-              <% if (chats) {
-                for (const chat of chats) { %>
-              <li><a class="dropdown-item" href="?chatId=<%= chat.Id %>"><%= chat.Title %></a></li>
-              <% }
-              } %>
-              <!-- Add more users as needed -->
-            </ul>
+          <div class="btn-group" role="group">
+            <button id="callModalCreateNewChat" class="btn btn-secondary btn-sm">New chat <span class="material-icons fs-5 align-middle">add_comment</span></button>
+            <!-- Use a dropdown for small screens -->
+            <div class="dropdown d-md-none">
+              <button class="btn btn-secondary dropdown-toggle w-100" type="button" id="chatListDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
+                Select a chat
+              </button>
+              <ul class="dropdown-menu" id="chatListDropdown" aria-labelledby="chatListDropdownButton">
+                <% if (chats) {
+                  for (const chat of chats) { %>
+                <li><a class="dropdown-item" href="?chatId=<%= chat.Id %>"><%= chat.Title %></a></li>
+                <% }
+                } %>
+                <!-- Add more users as needed -->
+              </ul>
+            </div>
           </div>
           <!-- Use a list for larger screens -->
           <ul class="list-group d-none d-md-block" id="chatList">
@@ -255,7 +270,7 @@
 
 <footer class="footer mt-auto py-3 bg-light fixed-bottom">
   <div class="container">
-    <span class="text-muted">&copy; Jan Svárovský 2023-2024 | <a href="https://github.com/svaroslav/svarochat"><span class="material-icons fs-5 align-middle">code</span></a> | Version: <%= appInfo.version %><% if (loggedIn) { %> | <span class="badge bg-secondary"><span id="wsstatus" class="material-icons fs-5 align-middle">cloud_off</span></span><% } %></span>
+    <span class="text-muted">&copy; Jan Svárovský 2024 | <a href="https://github.com/svaroslav/svarochat"><span class="material-icons fs-5 align-middle">code</span></a> | Version: <%= appInfo.version %><% if (loggedIn) { %> | <span class="badge bg-secondary"><span id="wsstatus" class="material-icons fs-5 align-middle">cloud_off</span></span><% } %></span>
   </div>
 </footer>
 

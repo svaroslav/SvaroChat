@@ -756,18 +756,22 @@ function sendWebsocketDataToContactsOfUser(username, data) {
         for (const chat of usersChats) {
             chatIds.push(chat.Id);
         }
+    } else {
+        logger.info('SendWebsocketDataToContactsOfUser - no common chats found: ' + username);
+        return;
     }
 
     // Construct a comma-separated list of placeholders for the array elements
     const placeholders = chatIds.map(() => '?').join(',');
-
+    
     // Prepare the SQL query with the dynamic placeholders
     const sql = `SELECT DISTINCT Username 
                 FROM UsersToChats 
                 WHERE ChatId IN (${placeholders}) AND Removed IS NULL`;
 
     // Execute the query with the array of chatIds as parameters
-    const rows = connSync.query(sql, chatIds);logger.debug('Found ' + rows.length + ' members');
+    const rows = connSync.query(sql, chatIds);
+    logger.debug('Found ' + rows.length + ' members');
 
     if (rows.length > 0) {
         for (const [usernameRow, userConnection] of userSocketMap) {
